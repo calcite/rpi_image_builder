@@ -1,0 +1,194 @@
+- name: kiosk box
+  hosts: all
+  gather_facts: no
+  vars:
+    hostname: "kiosk-box"
+    kiosk_user: kiosk
+    default_url: "https://www.phoronix.com"
+    timezone: Etc/UTC
+    splash_image: "templates/splash.png"
+    xsession_path: "/home/{{ kiosk_user }}/.xsession"
+
+    # https://docs.ansible.com/ansible/2.9/modules/user_module.html
+    users:
+      - name: pi
+        state: absent
+        remove: yes
+      - name: "{{ kiosk_user }}"
+        password: '$6$xyz$5kcP/dj6MjCSD81CKwSBoaK1hkGgu191xtig38729tHE4RWNxofHoflYd6oj8cQQTedjgrmGkxNTGDHAlHp1N/'  # openssl passwd -6 -salt xyz mypassword
+        autorized_keys:
+          - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII4hNsuaDWtgPkwbNY8ItbA1vujgiJcE5ZxX1av0Jk96 kiosk'   # ssh-keygen -t ed25519 -C kiosk
+      - name: root
+        password: '$6$xyz$5kcP/dj6MjCSD81CKwSBoaK1hkGgu191xtig38729tHE4RWNxofHoflYd6oj8cQQTedjgrmGkxNTGDHAlHp1N/'  # openssl passwd -6 -salt xyz mypassword
+        autorized_keys:
+          - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII4hNsuaDWtgPkwbNY8ItbA1vujgiJcE5ZxX1av0Jk96 kiosk'
+
+    # https://docs.ansible.com/ansible/2.9/modules/apt_repository_module.html
+    repository: []
+
+    # https://docs.ansible.com/ansible/2.9/modules/apt_module.html
+    packages: [plymouth, feh, xorg, chromium-browser, unclutter, nodm, xinput]
+
+
+    # https://docs.ansible.com/ansible/2.9/modules/file_module.html
+    file:
+      - {path: '/usr/share/plymouth/themes/splash', state: 'directory', mode: '0755'}
+
+    # https://docs.ansible.com/ansible/2.9/modules/get_url_module.html#get-url-module
+    get_url: []
+
+    # https://docs.ansible.com/ansible/2.9/modules/lineinfile_module.html
+    lineinfile:
+      - {path: '/etc/hosts', regexp: '^127\.0\.0\.1', line: '127.0.0.1 {{ hostname }}'}   # Set hostname
+      - {path: '/etc/hostname', regexp: '^.*$', line: '{{ hostname }}'}                   # Set hostname
+#      - {path: '/boot/config.txt', line: 'hdmi_group=2'}                                 # Set HDMI - type DMT
+#      - {path: '/boot/config.txt', line: 'hdmi_mode=35'}                                 # Set HDMI  - 1280x1024@60Hz see https://www.raspberrypi.com/documentation/computers/config_txt.html
+#      - {path: '/boot/config.txt', line: 'hdmi_force_hotplug=1'}                         # Set HDMI output
+#      - {path: '/boot/config.txt', line: 'gpu_mem=128'}                                  # Resize GPU memory
+      - {path: '/boot/config.txt', line: 'initramfs initramfs.img' }                      # Set initram with spash
+      - {path: '/boot/config.txt', line: 'avoid_warnings=1' }                             # Disable the undervoltage warning
+      - {path: '/boot/config.txt', line: 'disable_overscan=1' }                           # Suppress black borders
+      - {path: '/boot/cmdline.txt', regexp: '^(.*) init=/usr/lib/raspi-config/init_resize\.sh (.*)$', line: '\1 \2', backrefs: yes}   # Disable automatic resize partition
+      - {
+         path: '/boot/cmdline.txt', regexp: '^(.*) rootwait (.*)$',
+         line: '\1 logo.nologo loglevel=0 splash silent quiet plymouth.ignore-serial-consoles vt.global_cursor_default=0 rootwait \2',
+         backrefs: yes
+        } # Remove Raspberry images and blinking cursor
+      - {path: '/boot/cmdline.txt', regexp: '^(.*console=)(tty1)(.*)$', line: '\1tty3\3', backrefs: yes} # Remove boot messages
+      - {path: '/etc/default/keyboard', regexp: 'XKBLAYOUT=*', line: 'XKBLAYOUT="us"'}   # Set keybard layout
+      - {path: '/etc/fstab', line: 'tmpfs          /tmp            tmpfs   defaults,noatime,nosuid,size=5m   0 0' }      # Add /tmp as RAMdisk
+      - {path: '/etc/fstab', line: 'tmpfs          /var/log        tmpfs    defaults,noatime,nosuid,nodev,noexec,mode=0755,size=10m 0 0' }      # Add /var/logs as RAMdisk
+      - {path: '/home/{{ kiosk_user }}/default_url', line: '{{ default_url }}', create: yes, owner: '{{ kiosk_user }}' }
+      - {path: '/usr/share/plymouth/plymouthd.defaults', regexp: '^DeviceTimeout=(.*)$', line: 'DeviceTimeout=8' }
+      - {path: '/etc/default/nodm', regexp: '^NODM_USER=(.*)$', line: 'NODM_USER={{ kiosk_user }}' }
+      - {path: '/etc/default/nodm', regexp: '^NODM_ENABLED=(.*)$', line: 'NODM_ENABLED=true' }
+
+    # https://docs.ansible.com/ansible/2.9/modules/copy_module.html
+    copy:
+      - { dest: '/usr/share/plymouth/themes/splash', src: '{{ splash_image }}', mode: '0644' }
+      - { dest: '/boot', src: '{{ splash_image }}', mode: '0644' }
+      - { dest: '/boot', src: 'templates/initramfs.img', mode: '0644' }
+
+    # https://docs.ansible.com/ansible/2.9/modules/template_module.html
+    template:
+      - { dest: '/etc/logrotate.conf', src: 'templates/logrotate.conf', backup: yes }
+      - { dest: '{{ xsession_path }}', src: 'templates/xsession' }
+      - { dest: '/boot/splash.txt', src: 'templates/splash.txt' }
+      - { dest: '/usr/share/plymouth/themes/splash/splash.script', src: 'templates/splash.script' }
+      - { dest: '/usr/share/plymouth/themes/splash/splash.plymouth', src: 'templates/splash.plymouth' }
+
+    # https://docs.ansible.com/ansible/2.9/modules/systemd_module.html
+    systemd:
+      - { name: 'ssh.service', enabled: yes, state: started }
+      - { name: 'getty@tty1.service', enabled: no }     # Disable loging on TTY1
+
+    include_roles: []
+
+  tasks:
+    - name: Set timezone
+      timezone:
+        name: "{{ timezone }}"
+
+    #
+    #  User manage
+    #
+    - name: "Setup users"
+      user: "{{ item | dict2items | rejectattr('key', 'search', 'autorized_keys') | list | items2dict }}"
+      with_items: "{{ users }}"
+
+    - name: "Create ssh folder"
+      file:
+        path: "{{ '/home' if item['name'] != 'root' else '' }}/{{ item['name'] }}/.ssh/"
+        state: directory
+        mode: '0775'
+        owner: "{{ item['name'] }}"
+        group: "{{ item['name'] }}"
+      when: item.get('autorized_keys')
+      with_items: "{{ users }}"
+
+    - name: "Setup SSH autorized_keys"
+      copy:
+        dest: "{{ '/home' if item['name'] != 'root' else '' }}/{{ item['name'] }}/.ssh/authorized_keys"
+        content: "{{ item['autorized_keys'] | join('\n') }}"
+        owner: "{{ item['name'] }}"
+        group: "{{ item['name'] }}"
+        mode: '0700'
+      when: item.get('autorized_keys')
+      with_items: "{{ users }}"
+
+    - name: "Setup .bashrc for root user"
+      shell: cp /etc/skel/.bashrc /root/.bashrc
+
+    - name: Remove automatic resize service
+      sysvinit:
+        name: resize2fs_once
+        enabled: no
+
+    - name: "Setup roles"
+      include_role:
+        name: "{{ item }}"
+      with_items: "{{ include_roles }}"
+
+    #
+    #  Service set up
+    #
+
+    - name: Add Apt signing keys
+      apt_key:
+        url: "{{ item['key-url'] }}"
+        state: present
+      when: item.get('key-url')
+      with_items: "{{ repository }}"
+
+    - name: Add APT repositories
+      apt_repository:
+        repo:  "{{ item['repo'] }}"
+        state: "{{ item.get('state', 'present') }}"
+      when: item.get('repo')
+      with_items: "{{ repository }}"
+
+    - name: Upgrade system
+      apt:
+        upgrade: yes
+        update_cache: yes
+
+    - name: APT install packages
+      apt:
+        name: "{{ packages | list }}"
+        install_recommends: no
+        state: present
+
+    - name: File
+      file: "{{ item }}"
+      with_items: "{{ file }}"
+
+    - name: Line configuration
+      lineinfile: "{{ item }}"
+      with_items: "{{ lineinfile }}"
+
+    - name: Copy files
+      copy: "{{ item }}"
+      with_items: "{{ copy }}"
+
+    - name: File from templates
+      template: "{{ item }}"
+      with_items: "{{ template }}"
+
+
+    - name: File URL
+      get_url: "{{ item }}"
+      with_items: "{{ get_url }}"
+
+    - name: Start systemd services
+      systemd: "{{ item }}"
+      with_items: "{{ systemd }}"
+
+    - name: just force systemd to reread configs
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable ALAP splash, update initrd
+      shell: plymouth-set-default-theme splash -R
+
+    - name: Cleanup
+      shell: apt-get clean

@@ -1,0 +1,47 @@
+#!/bin/bash
+
+function get_ip() {
+ C=0
+ IP=''
+ while [ -z "$IP" ] && [ $C -le 5 ] ; do
+   IP=$(ip a show dev eth0 scope global | grep inet | awk '{print $2}' | cut -d '/' -f1)
+   sleep $C
+   C=$((C + 1))
+ done
+ echo $IP
+}
+
+function check_url() {
+ C=0
+ CODE=''
+ while [ "$CODE" -eq 200 ] && [ $C -le 5 ] ; do
+   CODE=$(curl -o /dev/null -s -k -w "%{http_code}\n"  $1)
+   sleep $C
+   C=$((C + 1))
+ done
+}
+
+function open() {
+  DIR="/run/user/{{ kiosk_user }}/chromium"
+  PREF="/home/{{ kiosk_user }}/.config/chromium/Default/Preferences"
+  URL="$1"
+  RESOLUTION=$(xrandr -d :0 --current | grep '*' | awk '{print $1}' | tr 'x' ',')
+  mkdir -p "$DIR/data"
+  mkdir -p "$DIR/cache"
+  echo "Open url $URL" | systemd-cat -t "{{ kiosk_user }}"
+  [ -f $PREF  ] && sed -i -e 's/"exited_cleanly":false/"exited_cleanly":true/' -e 's/"exit_type":"Crashed"/"exit_type":"Normal"/' $PREF
+  rm -rf "/home/{{ kiosk_user }}/.cache/chromium/"
+  check_url $URL
+  chromium-browser --kiosk --app="$URL" --window-size=$RESOLUTION
+}
+
+IP=$(get_ip)
+feh --info "echo '   IP: ${IP}\n'" -F /usr/share/plymouth/themes/splash/{{ splash_image | basename }} &
+xset -dpms
+xset s off
+xset s noblank
+unclutter -idle 0.01 -root &
+# Touchscreen rotation
+# xinput --set-prop 'ILITEK ILITEK-TP' 'Coordinate Transformation Matrix' 0 1 0 -1 0 1 0 0 1
+open "$(cat ~/default_url | tr -d '\n')"
+exit 0

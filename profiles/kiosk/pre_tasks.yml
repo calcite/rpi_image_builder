@@ -1,0 +1,20 @@
+- name: PreTask - Read device information
+  parted:
+    device: "{{ loop_dev }}"
+    unit: "MiB"
+  register: rs_partiton
+
+- name: PreTask - Extend a partition to fill all available space
+  parted:
+    device: "{{ loop_dev }}"
+    number: "{{ rs_partiton.partitions | length }}"
+    part_end: "100%"
+    resize: true
+    state: present
+
+- name: PreTask - Extend a filesystem
+  shell: |
+    e2fsck -y -f {{ PARTITION }}
+    resize2fs {{ PARTITION }}
+  vars:
+    PARTITION: "{{ loop_dev }}p{{ rs_partiton.partitions | length }}"

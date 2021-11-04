@@ -1,0 +1,3 @@
+## Initramfs-Splash
+image={{ splash_image | basename }}
+fullscreen=0

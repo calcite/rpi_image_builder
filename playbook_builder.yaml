@@ -1,0 +1,102 @@
+- name: Builder
+  hosts: localhost
+  connection: localhost
+  gather_facts: no
+  any_errors_fatal: yes
+  vars:
+    packages: [ git, udev, parted, qemu-utils ]
+    sector: 512
+    PROFILE: "{{ lookup('env', 'PROFILE') }}"
+    IMAGE: "{{ lookup('env', 'IMAGE') }}"
+    IMAGE_RESIZE: "{{ lookup('env', 'IMAGE_RESIZE') }}"
+    NO_BOOT_PARTITION: "{{ lookup('env', 'NO_BOOT_PARTITION') | default(1, true) }}"
+    NO_ROOT_PARTITION: "{{ lookup('env', 'NO_ROOT_PARTITION') | default(2, true) }}"
+    mounts:
+      - { path: '/mnt/proc', src: '/proc',  opts: 'bind'}
+      - { path: '/mnt/sys', src: '/sys',  opts: 'rbind'}
+      - { path: '/mnt/dev', src: '/dev',  opts: 'rbind'}
+      - { path: '/mnt/media', src: '/app/profiles/{{ PROFILE }}/', opts: 'bind'}
+
+  tasks:
+    - name: Builder - install packages
+      apt:
+        name: "{{ packages }}"
+        install_recommends: no
+        state: present
+    - name: Resize image
+      shell: qemu-img resize -f raw -q output/{{ IMAGE }} {{ IMAGE_RESIZE }}
+      when: IMAGE_RESIZE
+    - block:
+        - name: Builder - join image file
+          shell: "losetup -fP output/{{ IMAGE }} && losetup -l -a | grep {{ IMAGE }} | cut -d ' ' -f1"
+          register: rs_loop
+        - name: Builder - Check pre_tasks
+          stat:
+            path: "profiles/{{ PROFILE }}/pre_tasks.yml"
+          register: rs_pre_tasks
+        - name: Builder - Run pre_tasks
+          include_tasks: "profiles/{{ PROFILE }}/pre_tasks.yml"
+          vars:
+            loop_dev: "{{ rs_loop.stdout_lines[-1] }}"
+          when: rs_pre_tasks.stat.exists
+        - name: Builder - Mount image
+          mount:
+            path: "{{ item.path }}"
+            src: "{{ item.src }}"
+            opts: "{{ item.opts | default('') }}"
+            state: mounted
+            fstype: "{{ item.fstype }}"
+          with_items:
+            - { path: "/mnt", src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_ROOT_PARTITION }}", opts: "loop", fstype: "ext4"}
+            - { path: "/mnt/boot", src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_BOOT_PARTITION }}", opts: "loop", fstype: "vfat"}
+        - name: Builder - Mount system folders
+          mount:
+            path: "{{ item.path }}"
+            src: "{{ item.src }}"
+            opts: "{{ item.opts | default('') }}"
+            state: mounted
+            fstype: "{{ item.fstype | default('none') }}"
+          with_items: "{{ mounts }}"
+
+        - name: Builder - Customize the image
+          shell: |
+            ANSIBLE_INJECT_FACT_VARS=false
+            echo "" > ansible-log.txt
+            [ -f profiles/{{ PROFILE }}/requirements.yml ] && mkdir -p profiles/{{ PROFILE }}/roles && ansible-galaxy install -p profiles/{{ PROFILE }}/roles -r profiles/{{ PROFILE }}/requirements.yml 2>&1 | tee -a ansible-log.txt
+            ansible-playbook -v -i /mnt, -c chroot profiles/{{ PROFILE }}/playbook.yml 2>&1 | tee -a ansible-log.txt
+          register: rs_playbook
+
+        - name: Builder - Check post_tasks
+          stat:
+            path: "profiles/{{ PROFILE }}/post_tasks.yml"
+          register: rs_post_tasks
+        - name: Builder - Run post_tasks
+          include_tasks: "profiles/{{ PROFILE }}/post_tasks.yml"
+          vars:
+            loop_dev: "{{ rs_loop.stdout_lines[-1] }}"
+            mount_point: /mnt
+          when: rs_post_tasks.stat.exists
+      always:
+        - name: Builder - Umount system folders
+          mount:
+            path: "{{ item.path }}"
+            state: unmounted
+          ignore_errors: yes
+          with_items: "{{ mounts }}"
+        - name: Builder - Umount image
+          mount:
+            path: "{{ item }}"
+            state: unmounted
+          ignore_errors: yes
+          with_items: ["/mnt/boot", "/mnt"]
+        - name: Builder - unjoin image file
+          shell: "losetup -d {{ rs_loop.stdout_lines[-1] }}"
+          ignore_errors: yes
+          when: rs_loop.stdout_lines
+    - name: Builder - Show errors from playbook
+      debug:
+        var: rs_playbook.stderr_lines
+      when:
+       - rs_playbook is defined
+       - rs_playbook.stderr_lines
+
