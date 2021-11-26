@@ -93,6 +93,10 @@
           shell: "losetup -d {{ rs_loop.stdout_lines[-1] }}"
           ignore_errors: yes
           when: rs_loop.stdout_lines
+        - name: Remove roles folder
+          file:
+            path: "profiles/{{ PROFILE }}/roles"
+            state: absent
     - name: Builder - Show errors from playbook
       debug:
         var: rs_playbook.stderr_lines
