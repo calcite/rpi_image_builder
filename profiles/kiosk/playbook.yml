@@ -48,6 +48,11 @@
       - {path: '/boot/config.txt', line: 'initramfs initramfs.img' }                      # Set initram with spash
       - {path: '/boot/config.txt', line: 'avoid_warnings=1' }                             # Disable the undervoltage warning
       - {path: '/boot/config.txt', line: 'disable_overscan=1' }                           # Suppress black borders
+      - {path: '/boot/config.txt', line: 'disable_splash=1'}                              # Remove rainbow screen at RPi start
+      - {path: '/boot/config.txt', line: 'avoid_warnings=1'}                              # Disable the undervoltage warning
+      - {path: '/boot/config.txt', line: 'boot_delay=0'}                                  # Reduce the boot delay
+      - {path: '/boot/config.txt', line: 'dtoverlay=pi3-disable-bt'}                      # Disable bluetooth
+      - {path: '/boot/config.txt', line: 'dtoverlay=pi3-disable-wifi'}                    # Disable Wifi
       - {path: '/boot/cmdline.txt', regexp: '^(.*) init=/usr/lib/raspi-config/init_resize\.sh (.*)$', line: '\1 \2', backrefs: yes}   # Disable automatic resize partition
       - {
          path: '/boot/cmdline.txt', regexp: '^(.*) rootwait (.*)$',
@@ -80,7 +85,14 @@
     # https://docs.ansible.com/ansible/2.9/modules/systemd_module.html
     systemd:
       - { name: 'ssh.service', enabled: yes, state: started }
-      - { name: 'getty@tty1.service', enabled: no }     # Disable loging on TTY1
+      - { name: 'bluetooth.service', enabled: no, state: stopped }      # Disable BT service
+      - { name: 'wpa_supplicant.service', enabled: no, state: stopped } # Disable Wifi service
+      - { name: 'getty@tty1.service', enabled: no }                     # Disable loging on TTY1
+#      - { name: 'apt-daily.service', enabled: no, state: stopped }
+#      - { name: 'apt-daily.timer', enabled: no }
+#      - { name: 'apt-daily-upgrade.service', enabled: no, state: stopped }
+#      - { name: 'apt-daily-upgrade.timer', enabled: no }
+#      - { name: 'avahi-daemon', enabled: no }
 
     include_roles: []
 
