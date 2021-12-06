@@ -13,8 +13,8 @@
     NO_ROOT_PARTITION: "{{ lookup('env', 'NO_ROOT_PARTITION') | default(2, true) }}"
     mounts:
       - { path: '/mnt/proc', src: '/proc',  opts: 'bind'}
-      - { path: '/mnt/sys', src: '/sys',  opts: 'rbind'}
-      - { path: '/mnt/dev', src: '/dev',  opts: 'rbind'}
+      - { path: '/mnt/sys', src: '/sys',  opts: 'bind'}
+      - { path: '/mnt/dev', src: '/dev',  opts: 'bind'}
       - { path: '/mnt/media', src: '/app/profiles/{{ PROFILE }}/', opts: 'bind'}
 
   tasks:
@@ -60,10 +60,13 @@
 
         - name: Builder - Customize the image
           shell: |
-            ANSIBLE_INJECT_FACT_VARS=false
-            echo "" > ansible-log.txt
-            [ -f profiles/{{ PROFILE }}/requirements.yml ] && mkdir -p profiles/{{ PROFILE }}/roles && ansible-galaxy install -p profiles/{{ PROFILE }}/roles -r profiles/{{ PROFILE }}/requirements.yml 2>&1 | tee -a ansible-log.txt
-            ansible-playbook -v -i /mnt, -c chroot profiles/{{ PROFILE }}/playbook.yml 2>&1 | tee -a ansible-log.txt
+            set -o pipefail;
+            export ANSIBLE_INJECT_FACT_VARS=false;
+            echo "" > output/ansible-log.txt
+            [ -f profiles/{{ PROFILE }}/requirements.yml ] && mkdir -p profiles/{{ PROFILE }}/roles && ansible-galaxy install -p profiles/{{ PROFILE }}/roles -r profiles/{{ PROFILE }}/requirements.yml 2>&1 | tee -a output/ansible-log.txt
+            ansible-playbook -v -i /mnt, -c chroot profiles/{{ PROFILE }}/playbook.yml 2>&1 | tee -a output/ansible-log.txt
+          args:
+            executable: /bin/bash
           register: rs_playbook
 
         - name: Builder - Check post_tasks
@@ -77,6 +80,10 @@
             mount_point: /mnt
           when: rs_post_tasks.stat.exists
       always:
+        - name: Print errors
+          debug: var=rs_playbook.stdout_lines
+          when: rs_playbook.rc != 0
+          ignore_errors: yes
         - name: Builder - Umount system folders
           mount:
             path: "{{ item.path }}"
@@ -97,10 +104,5 @@
           file:
             path: "profiles/{{ PROFILE }}/roles"
             state: absent
-    - name: Builder - Show errors from playbook
-      debug:
-        var: rs_playbook.stderr_lines
-      when:
-       - rs_playbook is defined
-       - rs_playbook.stderr_lines
+
 
