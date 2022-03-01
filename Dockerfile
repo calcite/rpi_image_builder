@@ -1,6 +1,6 @@
 ARG SOURCE_IMAGE=arm32v7/debian
-ARG PACKAGES=''
 FROM $SOURCE_IMAGE
+ARG PACKAGES=''
 WORKDIR /app
 RUN mkdir -p /app/profiles /app/output
 ADD playbook_builder.yaml /app/playbook_builder.yaml
