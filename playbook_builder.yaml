@@ -53,7 +53,7 @@
             opts: "loop"
             state: mounted
             fstype: "vfat"
-          when: NO_BOOT_PARTITION > 0
+          when: (NO_BOOT_PARTITION | int) > 0
         - name: Builder - Mount system folders
           mount:
             path: "{{ item.path }}"
@@ -100,7 +100,7 @@
             path: "/mnt/boot"
             state: unmounted
           ignore_errors: yes
-          when: NO_BOOT_PARTITION > 0
+          when: (NO_BOOT_PARTITION | int) > 0
         - name: Builder - Umount root
           mount:
             path: "/mnt"
