@@ -39,16 +39,21 @@
           vars:
             loop_dev: "{{ rs_loop.stdout_lines[-1] }}"
           when: rs_pre_tasks.stat.exists
+        - name: Builder - Mount root partition
+          mount:
+            path: "/mnt"
+            src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_ROOT_PARTITION }}"
+            opts: "loop"
+            state: mounted
+            fstype: "ext4"
         - name: Builder - Mount image
           mount:
-            path: "{{ item.path }}"
-            src: "{{ item.src }}"
-            opts: "{{ item.opts | default('') }}"
+            path: "/mnt/boot"
+            src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_BOOT_PARTITION }}"
+            opts: "loop"
             state: mounted
-            fstype: "{{ item.fstype }}"
-          with_items:
-            - { path: "/mnt", src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_ROOT_PARTITION }}", opts: "loop", fstype: "ext4"}
-            - { path: "/mnt/boot", src: "{{ rs_loop.stdout_lines[-1] }}p{{ NO_BOOT_PARTITION }}", opts: "loop", fstype: "vfat"}
+            fstype: "vfat"
+          when: NO_BOOT_PARTITION > 0
         - name: Builder - Mount system folders
           mount:
             path: "{{ item.path }}"
@@ -90,12 +95,17 @@
             state: unmounted
           ignore_errors: yes
           with_items: "{{ mounts }}"
-        - name: Builder - Umount image
+        - name: Builder - Umount boot
           mount:
-            path: "{{ item }}"
+            path: "/mnt/boot"
             state: unmounted
           ignore_errors: yes
-          with_items: ["/mnt/boot", "/mnt"]
+          when: NO_BOOT_PARTITION > 0
+        - name: Builder - Umount root
+          mount:
+            path: "/mnt"
+            state: unmounted
+          ignore_errors: yes
         - name: Builder - unjoin image file
           shell: "losetup -d {{ rs_loop.stdout_lines[-1] }}"
           ignore_errors: yes
