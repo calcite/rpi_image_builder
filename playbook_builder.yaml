@@ -15,6 +15,7 @@
       - { path: '/mnt/proc', src: '/proc',  opts: 'bind'}
       - { path: '/mnt/sys', src: '/sys',  opts: 'bind'}
       - { path: '/mnt/dev', src: '/dev',  opts: 'bind'}
+      - { path: '/mnt/tmp', src: '/tmp',  opts: 'bind'}
       - { path: '/mnt/media', src: '/app/profiles/{{ PROFILE }}/', opts: 'bind'}
 
   tasks:
